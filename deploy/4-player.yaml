@@ -1,0 +1,102 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app.kubernetes.io/component: unrealengine
+    app.kubernetes.io/part-of: ue4-on-eks
+    app.kubernetes.io/version: 0.0.1
+    app: player
+  name: player
+  namespace: ue4
+spec:
+  selector:
+    matchLabels:
+      app: player
+      app.kubernetes.io/component: unrealengine
+      app.kubernetes.io/part-of: ue4-on-eks
+      app.kubernetes.io/version: 0.0.1
+  template:
+    metadata:
+      annotations:
+        prometheus.io/port: "9113"
+        prometheus.io/scrape: "true"
+        sidecar.istio.io/rewriteAppHTTPProbers: "true"
+      labels:
+        app: player
+        app.kubernetes.io/component: unrealengine
+        app.kubernetes.io/part-of: ue4-on-eks
+        app.kubernetes.io/version: 0.0.1
+    spec:
+      containers:
+      - args:
+        - -nginx.scrape-uri=http://localhost:8888
+        image: nginx/nginx-prometheus-exporter:0.9.0
+        imagePullPolicy: Always
+        name: metrics
+        ports:
+        - containerPort: 9113
+          name: metrics
+        resources:
+          requests:
+            cpu: 5m
+      - image: ghcr.io/stevensu1977/ue4-pixelstreaming/player
+        imagePullPolicy: Always
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: http
+        name: player
+        ports:
+        - containerPort: 8080
+          name: http
+        - containerPort: 8888
+          name: status
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: http
+        resources:
+          limits:
+            cpu: 100m
+            memory: 100Mi
+          requests:
+            cpu: 50m
+            memory: 50Mi
+        securityContext:
+          capabilities:
+            add:
+            - NET_BIND_SERVICE
+            - CHOWN
+            - SETGID
+            - SETUID
+            drop:
+            - all
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 10001
+        volumeMounts:
+        - mountPath: /tmp
+          name: tmp-volume
+      volumes:
+      - emptyDir:
+          medium: Memory
+        name: tmp-volume
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/component: unrealengine
+    app.kubernetes.io/part-of: ue4-on-eks
+    app.kubernetes.io/version: 0.0.1
+  name: player
+  namespace: ue4
+spec:
+  ports:
+  - name: http
+    port: 80
+    targetPort: 8080
+  selector:
+    app: player
+  type: ClusterIP

@@ -1,0 +1,127 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  labels:
+    app.kubernetes.io/component: unrealengine
+    app.kubernetes.io/part-of: ue4-on-eks
+    app.kubernetes.io/version: 0.0.1
+  name: turn-secret
+  namespace: ue4
+data:
+  password: VUU0UGFzc3cwcmQ=
+  username: dW5yZWFsZW5naW5lNGRlbW8=
+type: Opaque
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  labels:
+    app.kubernetes.io/component: unrealengine
+    app.kubernetes.io/part-of: ue4-on-eks
+    app.kubernetes.io/version: 0.0.1
+  name: stream-svc-account
+  namespace: ue4
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  labels:
+    app.kubernetes.io/component: turn
+    app.kubernetes.io/part-of: ue4-on-eks
+    app.kubernetes.io/version: 0.0.1
+  name: turn-svc-account
+  namespace: ue4
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/component: unrealengine
+    app.kubernetes.io/part-of: ue4-on-eks
+    app.kubernetes.io/version: 0.0.1
+  name: stream-role
+  namespace: kube-system
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - nodes
+  - pods
+  verbs:
+  - list
+  - get
+  - patch
+  - update
+- apiGroups:
+  - apps
+  resources:
+  - statefulsets
+  - replicasets
+  - daemonsets
+  - deployments
+  verbs:
+  - list
+  - get
+  - patch
+  - update
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/component: turn
+    app.kubernetes.io/part-of: ue4-on-eks
+    app.kubernetes.io/version: 0.0.1
+  name: turn-role
+  namespace: kube-system
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - nodes
+  verbs:
+  - list
+  - get
+  - patch
+  - update
+- apiGroups:
+  - ""
+  resources:
+  - endpoints
+  verbs:
+  - create
+  - patch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  labels:
+    app.kubernetes.io/component: unrealengine
+    app.kubernetes.io/part-of: ue4-on-eks
+    app.kubernetes.io/version: 0.0.1
+  name: stream-role-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: stream-role
+subjects:
+- kind: ServiceAccount
+  name: stream-svc-account
+  namespace: ue4
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  labels:
+    app.kubernetes.io/component: turn
+    app.kubernetes.io/part-of: ue4-on-eks
+    app.kubernetes.io/version: 0.0.1
+  name: turn-role-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: turn-role
+subjects:
+- kind: ServiceAccount
+  name: turn-svc-account
+  namespace: ue4

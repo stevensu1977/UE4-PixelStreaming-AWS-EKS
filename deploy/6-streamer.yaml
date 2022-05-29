@@ -1,0 +1,170 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app.kubernetes.io/component: unrealengine
+    app.kubernetes.io/part-of: ue4-on-eks
+    app.kubernetes.io/version: 0.0.1
+    app: stream
+  name: stream
+  namespace: ue4
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: unrealengine
+      app.kubernetes.io/part-of: ue4-on-eks
+      app.kubernetes.io/version: 0.0.1
+      app: stream
+  template:
+    metadata:
+      annotations:
+        prometheus.io/port: "9000"
+        prometheus.io/scrape: "true"
+        sidecar.istio.io/rewriteAppHTTPProbers: "true"
+      labels:
+        app: stream
+        app.kubernetes.io/component: unrealengine
+        app.kubernetes.io/name: stream
+        app.kubernetes.io/part-of: ue4-on-eks
+        app.kubernetes.io/version: 0.0.1
+        version: 0.0.1
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: app.pixel/streamer
+                operator: Exists
+      containers:
+      - args:
+        - --configFile=/config/cirrus.json
+        - --httpPort=3000
+        - --streamerPort=8888
+        - --UseMatchmaker=true
+        - --MatchmakerAddress=matchmaker
+        - --MatchmakerPort=9999
+        - --useMatchmaker=true
+        - --matchmakerAddress=matchmaker
+        - --matchmakerPort=9999
+        - --ueRestEndpoint=http://localhost:8111
+        - --rtcConfigSvc=http://turn-discovery:3000
+        - --metricsPort=9000
+        env:
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        image: ghcr.io/stevensu1977/ue4-pixelstreaming/signalserver:latest
+        imagePullPolicy: Always
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: http
+        name: signaler
+        ports:
+        - containerPort: 3000
+          name: http
+        - containerPort: 8888
+          name: stream
+        - containerPort: 9000
+          name: metrics
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: http
+        volumeMounts:
+        - mountPath: /config
+          name: config
+      - env:
+        - name: SIGNAL_URL
+          value: ws://localhost:8888
+        envFrom:
+        - configMapRef:
+            name: pixel-stream-configs
+        image: ghcr.io/stevensu1977/ue4-pixelstreaming/actionrpg-project
+        imagePullPolicy: IfNotPresent
+        name: streamer
+        ports:
+        - containerPort: 8111
+          name: rest
+        resources:
+          requests:
+            cpu: 1000m
+      - args:
+        - -ec
+        - |
+          while true; do
+            # obtain player connections from metrics
+            export PLAYERS=$(curl -s "${SELF_METRICS}" | grep ^signalserver_player_socket_connections | awk '{print $2}')
+
+            # apply player connections as the pod deletion cost
+            kubectl annotate pod "${POD_NAME}" \
+              --namespace "${NAMESPACE}" \
+              --overwrite controller.kubernetes.io/pod-deletion-cost="${PLAYERS}" || true
+            sleep 10
+          done
+        command:
+        - /bin/sh
+        env:
+        - name: SELF_METRICS
+          value: http://localhost:9000/custom
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        image: ghcr.io/stevensu1977/ue4-pixelstreaming/kubetools:kubectl
+        imagePullPolicy: Always
+        name: annotation-agent
+        resources:
+          requests:
+            cpu: 5m
+      serviceAccountName: stream-svc-account
+      terminationGracePeriodSeconds: 60
+      tolerations:
+      - effect: NoSchedule
+        key: app.pixel/streamer
+        operator: Exists
+      volumes:
+      - configMap:
+          name: pixel-app-configs
+        name: config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: stream-discovery
+    app.kubernetes.io/component: unrealengine
+    app.kubernetes.io/part-of: ue4-on-eks
+    app.kubernetes.io/version: 0.0.1
+  name: stream-discovery
+  namespace: ue4
+spec:
+  clusterIP: None
+  ports:
+  - name: http
+    port: 3000
+    targetPort: 3000
+  selector:
+    app: stream
+  type: ClusterIP
+---
+apiVersion: v1
+data:
+  EXTRA_ARGS: -RestApiPort=8111 -AllowPixelStreamingCommands -PixelStreamingHideCursor
+    -PixelStreamingWebRTCMaxFps=30 -PixelStreamingWebRTCDisableReceiveAudio -FullStdOutLogOutput
+  RES_X: "1920"
+  RES_Y: "1080"
+kind: ConfigMap
+metadata:
+  labels:
+    app.kubernetes.io/component: unrealengine
+    app.kubernetes.io/part-of: ue4-on-eks
+    app.kubernetes.io/version: 0.0.1
+  name: pixel-stream-configs
+  namespace: ue4

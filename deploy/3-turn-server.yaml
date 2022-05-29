@@ -1,0 +1,77 @@
+
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  labels:
+    app.kubernetes.io/component: turn
+    app.kubernetes.io/part-of: ue4-on-eks
+    app.kubernetes.io/version: 0.0.1
+    app: turn
+  name: turn
+  namespace: ue4
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: turn
+      app.kubernetes.io/part-of: ue4-on-eks
+      app.kubernetes.io/version: 0.0.1
+      app: turn
+  template:
+    metadata:
+      annotations:
+        sidecar.istio.io/inject: "false"
+      labels:
+        app: turn
+        app.kubernetes.io/name: turn
+        app.kubernetes.io/part-of: ue4-on-eks
+        app.kubernetes.io/version: 0.0.1
+        version: 0.0.1
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: app.pixel/turn
+                operator: In
+                values:
+                - "true"
+      containers:
+      - env:
+        - name: INTERNAL_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        - name: TURN_PORT
+          value: "3478"
+        - name: TURN_MIN_PORT
+          value: "49152"
+        - name: TURN_MAX_PORT
+          value: "65535"
+        - name: TURN_REALM
+          value: app.pixel
+        - name: TURN_USER
+          valueFrom:
+            secretKeyRef:
+              key: username
+              name: turn-secret
+        - name: TURN_PASS
+          valueFrom:
+            secretKeyRef:
+              key: password
+              name: turn-secret
+        image: ghcr.io/stevensu1977/ue4-pixelstreaming/turnserver
+        imagePullPolicy: Always
+        name: turn
+        ports:
+        - containerPort: 3478
+          hostPort: 3478
+          name: turn-udp
+          protocol: UDP
+        - containerPort: 3478
+          hostPort: 3478
+          name: turn-tcp
+          protocol: TCP
+      hostNetwork: true
+      serviceAccountName: turn-svc-account
+      terminationGracePeriodSeconds: 10
